@@ -1,0 +1,7 @@
+# Local Multica credentials and generated runtime state never belong here.
+.env
+*.log
+*.pid
+config.json
+runtime-state/
+

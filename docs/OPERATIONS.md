@@ -1,0 +1,69 @@
+# Operations
+
+## Windows lifecycle
+
+The current-user scheduled task `Multica-PC-Runtime` starts at Windows sign-in
+and runs the Multica daemon in the foreground. Task Scheduler can therefore
+observe it and retry an unexpected exit up to ten times at one-minute
+intervals. Windows ends the task during sign-out or shutdown; the next sign-in
+starts the same daemon identity and re-registers the existing provider
+runtimes rather than creating new ones.
+
+The supervisor uses these existing authorities:
+
+```text
+Multica profile: pc-qwen-service
+Daemon ID:       e1f47508-6d16-43c6-ad47-a34edb029c89
+Device name:     [Local] PC Qwen
+Runtime name:    [Local] PC Qwen service
+Workspace root:  C:\AgentRuntimes\pc-qwen-service
+```
+
+The historical names are retained to preserve identity. The daemon-backed
+Codex runtime and profile-backed Qwen runtime are distinct provider runtimes on
+the same PC surface.
+
+## Install and operate
+
+Run from a normal Windows PowerShell session:
+
+```powershell
+# Reconcile the scheduled task and start it when no daemon is already active.
+.\scripts\Manage-MulticaPcRuntime.ps1 -Action Install
+
+# Read-only local daemon and provider-runtime status.
+.\scripts\Manage-MulticaPcRuntime.ps1 -Action Status
+
+# Explicit lifecycle operations.
+.\scripts\Manage-MulticaPcRuntime.ps1 -Action Start
+.\scripts\Manage-MulticaPcRuntime.ps1 -Action Stop
+.\scripts\Manage-MulticaPcRuntime.ps1 -Action Restart
+```
+
+Use `-NoStart` with `Install` when reconciling task configuration during
+maintenance. Installation does not interrupt an already-running unsupervised
+daemon; supervision takes over at the next sign-in. Use `Restart` only after
+confirming that no Multica task is active because stopping the daemon interrupts
+active local work.
+
+`Uninstall` removes only the scheduled task after stopping the daemon. It does
+not delete the runtime root, profile, credentials, task workspaces, or remote
+runtime records.
+
+## Provider health
+
+`Status` reports three separate conditions:
+
+1. scheduled-task supervision state;
+2. native daemon state;
+3. the known Codex and Qwen runtime rows returned by the Multica workspace.
+
+The Codex runtime is registered directly by the daemon. The Qwen runtime also
+requires the enabled custom profile `R38 Qwen Reserved` and a supported
+host-local executable pin for `qwen-r38-reserved`. An offline Qwen row while the
+daemon and Codex row are online is a provider-activation issue, not a daemon
+startup failure.
+
+Do not put the Multica PAT, profile `config.json`, environment secrets, provider
+credentials, prompts, or task artifacts in this repository or command output.
+
