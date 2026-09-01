@@ -16,7 +16,6 @@ $DeviceName = '[Local] PC Qwen'
 $RuntimeName = '[Local] PC Qwen service'
 $RuntimeRoot = 'C:\AgentRuntimes\pc-qwen-service'
 $CodexRuntimeId = '713a5202-c384-4cf0-8190-876e36f8bdcf'
-$QwenRuntimeId = '25ba7103-2183-4c26-a09c-2e427d7de09d'
 $MulticaPath = Join-Path $RuntimeRoot 'bin\multica.exe'
 $ActivationRoot = Join-Path $RuntimeRoot 'activation'
 $DeployedScript = Join-Path $ActivationRoot 'Manage-MulticaPcRuntime.ps1'
@@ -66,14 +65,12 @@ function Get-RuntimeRows {
         if ($LASTEXITCODE -ne 0) {
             throw "Multica runtime list failed with exit code $LASTEXITCODE"
         }
-        foreach ($runtimeId in @($CodexRuntimeId, $QwenRuntimeId)) {
-            $row = $rows | Select-String -SimpleMatch $runtimeId
-            if ($row) {
-                Write-Output $row.Line
-            }
-            else {
-                Write-Output "$runtimeId  not_returned"
-            }
+        $row = $rows | Select-String -SimpleMatch $CodexRuntimeId
+        if ($row) {
+            Write-Output $row.Line
+        }
+        else {
+            Write-Output "$CodexRuntimeId  not_returned"
         }
     }
     finally {
@@ -157,7 +154,7 @@ switch ($Action) {
             -Trigger $taskTrigger `
             -Principal $taskPrincipal `
             -Settings $taskSettings `
-            -Description 'Supervises the native PC Multica daemon for Codex and profile-backed runtimes.' `
+            -Description 'Supervises the native PC Multica Codex runtime used for PC service operations.' `
             -Force | Out-Null
 
         $legacy = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue
@@ -203,4 +200,3 @@ switch ($Action) {
         Write-Output "removed_task=$TaskName"
     }
 }
-

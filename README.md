@@ -29,20 +29,27 @@ That root is not a Git repository. Installation copies the reviewed supervisor
 into its `activation` directory so Windows startup does not depend on this
 checkout remaining at a particular path.
 
-## Existing runtime inventory
+## Native runtime inventory
 
 | Provider | Runtime ID | Current role |
 |---|---|---|
 | Codex | `713a5202-c384-4cf0-8190-876e36f8bdcf` | Direct runtime registered by the native daemon |
-| Qwen | `25ba7103-2183-4c26-a09c-2e427d7de09d` | Profile-backed `R38 Qwen Reserved` runtime |
 
-The existing profile and device names contain `Qwen` for historical continuity,
-but the daemon also hosts Codex. This repository does not rename or recreate
-either runtime.
+The existing profile and device names contain `Qwen` because this Codex runtime
+operates the PC Ollama/Qwen service. That service target does not make this a
+Qwen provider/client runtime. This repository does not rename or recreate the
+runtime.
 
-The Qwen runtime additionally depends on its host-local custom-profile
-executable pin. Daemon availability and Qwen provider activation are separate
-health conditions and must be reported separately.
+The workspace-visible `R38 Qwen Reserved` custom profile is automatically
+projected onto connected daemons by Multica. Its offline PC row
+`25ba7103-2183-4c26-a09c-2e427d7de09d` and offline Mac row
+`880f6484-8a16-4d1d-8448-805ee1ec012b` are registration projections only—not
+Qwen installations, credentials, agents, models, or usable provider runtimes.
+They are not health targets of this repository.
+
+The operational reservation-backed Qwen provider runtime remains the private
+R38 runtime `970f127e-bfff-402b-b14c-d24d022d0b6a`. It is outside this
+repository and sends inference requests to the PC Ollama/Qwen service.
 
 ## Quick start
 
@@ -52,4 +59,3 @@ health conditions and must be reported separately.
 ```
 
 See [docs/OPERATIONS.md](docs/OPERATIONS.md) for lifecycle details.
-

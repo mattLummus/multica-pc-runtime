@@ -19,9 +19,9 @@ Runtime name:    [Local] PC Qwen service
 Workspace root:  C:\AgentRuntimes\pc-qwen-service
 ```
 
-The historical names are retained to preserve identity. The daemon-backed
-Codex runtime and profile-backed Qwen runtime are distinct provider runtimes on
-the same PC surface.
+The historical names are retained to preserve identity. This is a daemon-backed
+Codex runtime used to operate the PC Ollama/Qwen service; it is not a local Qwen
+provider/client runtime.
 
 ## Install and operate
 
@@ -56,14 +56,17 @@ runtime records.
 
 1. scheduled-task supervision state;
 2. native daemon state;
-3. the known Codex and Qwen runtime rows returned by the Multica workspace.
+3. the native Codex runtime row returned by the Multica workspace.
 
-The Codex runtime is registered directly by the daemon. The Qwen runtime also
-requires the enabled custom profile `R38 Qwen Reserved` and a supported
-host-local executable pin for `qwen-r38-reserved`. An offline Qwen row while the
-daemon and Codex row are online is a provider-activation issue, not a daemon
-startup failure.
+The Codex runtime is registered directly by the daemon. Multica also projects
+the workspace-visible `R38 Qwen Reserved` profile onto this daemon, producing
+an inert offline PC registration row when `qwen-r38-reserved` is unavailable.
+That row does not represent a local Qwen installation, agent, credential, model,
+or required provider runtime, and its offline state is not a daemon failure.
+
+Reservation-backed Qwen clients run on the private R38 runtime and consume the
+PC Ollama/Qwen service remotely. Provisioning a second PC-local Qwen provider
+runtime is outside this repository's scope.
 
 Do not put the Multica PAT, profile `config.json`, environment secrets, provider
 credentials, prompts, or task artifacts in this repository or command output.
-
