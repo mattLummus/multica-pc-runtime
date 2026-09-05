@@ -23,6 +23,15 @@ The historical names are retained to preserve identity. This is a daemon-backed
 Codex runtime used to operate the PC Ollama/Qwen service; it is not a local Qwen
 provider/client runtime.
 
+Before starting the daemon, the supervisor resolves `codex.exe` from the
+current process `PATH` or from Codex Desktop's versioned installation beneath
+`%LOCALAPPDATA%\OpenAI\Codex\bin`. The selected directory is prepended only to
+the scheduled process environment. This is required because Codex Desktop can
+make its CLI available to interactive child processes without adding that
+versioned directory to the persistent Windows `PATH` inherited by Task
+Scheduler. If no installed Codex CLI can be found, the task exits nonzero so
+its configured retry and failure reporting remain effective.
+
 ## Install and operate
 
 Run from a normal Windows PowerShell session:

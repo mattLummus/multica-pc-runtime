@@ -29,6 +29,12 @@ That root is not a Git repository. Installation copies the reviewed supervisor
 into its `activation` directory so Windows startup does not depend on this
 checkout remaining at a particular path.
 
+At startup, the supervisor locates the current Codex Desktop CLI under
+`%LOCALAPPDATA%\OpenAI\Codex\bin` and adds its versioned directory to the
+daemon process environment. It does not change the persistent user or machine
+`PATH`, and it does not hard-code a Codex release directory that an application
+update can replace.
+
 ## Native runtime inventory
 
 | Provider | Runtime ID | Current role |

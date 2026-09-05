@@ -29,6 +29,45 @@ function Assert-Installation {
     }
 }
 
+function Add-CodexCliToProcessPath {
+    $existing = Get-Command codex.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($existing) {
+        return $existing.Source
+    }
+
+    $codexBinRoot = Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin'
+    $candidates = @(
+        Get-ChildItem -LiteralPath $codexBinRoot -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $candidate = Join-Path $_.FullName 'codex.exe'
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                    Get-Item -LiteralPath $candidate
+                }
+            } |
+            Sort-Object LastWriteTimeUtc -Descending
+    )
+
+    if ($candidates.Count -eq 0) {
+        throw "No Codex CLI installation was found under the supported Codex Desktop location: $codexBinRoot"
+    }
+
+    $codexPath = $candidates[0].FullName
+    $codexDirectory = Split-Path -Parent $codexPath
+    $pathEntries = @($env:PATH -split [IO.Path]::PathSeparator)
+    if ($pathEntries -notcontains $codexDirectory) {
+        $env:PATH = $codexDirectory + [IO.Path]::PathSeparator + $env:PATH
+    }
+
+    $resolved = Get-Command codex.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $resolved) {
+        throw 'The Codex CLI was found but could not be resolved after updating the daemon process PATH.'
+    }
+
+    return $resolved.Source
+}
+
 function Invoke-Multica {
     param(
         [Parameter(Mandatory)][string[]]$Arguments,
@@ -183,6 +222,7 @@ switch ($Action) {
         Get-DaemonStatus
     }
     'RunForeground' {
+        Add-CodexCliToProcessPath | Out-Null
         $exitCode = Invoke-Multica -DiscardOutput -Arguments @(
             'daemon', 'start',
             '--foreground',
