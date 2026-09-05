@@ -16,6 +16,7 @@ $DeviceName = '[Local] PC Qwen'
 $RuntimeName = '[Local] PC Qwen service'
 $RuntimeRoot = 'C:\AgentRuntimes\pc-qwen-service'
 $CodexRuntimeId = '713a5202-c384-4cf0-8190-876e36f8bdcf'
+$RecoveryIntervalMinutes = 1
 $MulticaPath = Join-Path $RuntimeRoot 'bin\multica.exe'
 $ActivationRoot = Join-Path $RuntimeRoot 'activation'
 $DeployedScript = Join-Path $ActivationRoot 'Manage-MulticaPcRuntime.ps1'
@@ -66,6 +67,56 @@ function Add-CodexCliToProcessPath {
     }
 
     return $resolved.Source
+}
+
+function Add-GitCliToProcessPath {
+    $existing = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($existing) {
+        return $existing.Source
+    }
+
+    $candidates = @()
+    $programFilesGit = Join-Path $env:ProgramFiles 'Git\cmd\git.exe'
+    if (Test-Path -LiteralPath $programFilesGit -PathType Leaf) {
+        $candidates += Get-Item -LiteralPath $programFilesGit
+    }
+
+    $githubDesktopRoot = Join-Path $env:LOCALAPPDATA 'GitHubDesktop'
+    $candidates += @(
+        Get-ChildItem -LiteralPath $githubDesktopRoot -Directory -Filter 'app-*' -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $candidate = Join-Path $_.FullName 'resources\app\git\cmd\git.exe'
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                    Get-Item -LiteralPath $candidate
+                }
+            }
+    )
+    $candidates = @($candidates | Sort-Object LastWriteTimeUtc -Descending)
+
+    if ($candidates.Count -eq 0) {
+        throw 'No supported Git CLI installation was found in Program Files or GitHub Desktop.'
+    }
+
+    $gitPath = $candidates[0].FullName
+    $gitDirectory = Split-Path -Parent $gitPath
+    $pathEntries = @($env:PATH -split [IO.Path]::PathSeparator)
+    if ($pathEntries -notcontains $gitDirectory) {
+        $env:PATH = $gitDirectory + [IO.Path]::PathSeparator + $env:PATH
+    }
+
+    $resolved = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $resolved) {
+        throw 'The Git CLI was found but could not be resolved after updating the daemon process PATH.'
+    }
+
+    return $resolved.Source
+}
+
+function Add-RequiredCliToolsToProcessPath {
+    Add-CodexCliToProcessPath | Out-Null
+    Add-GitCliToProcessPath | Out-Null
 }
 
 function Invoke-Multica {
@@ -137,6 +188,10 @@ function Start-SupervisedDaemon {
     if (-not $task) {
         throw "Scheduled task '$TaskName' is not installed. Run with -Action Install first."
     }
+    if (-not $task.Settings.Enabled) {
+        Enable-ScheduledTask -TaskName $TaskName | Out-Null
+        $task = Get-ScheduledTask -TaskName $TaskName
+    }
     if ($task.State -eq 'Running') {
         Write-Output 'supervised_daemon=already_running'
         return
@@ -151,6 +206,7 @@ function Start-SupervisedDaemon {
 }
 
 function Stop-SupervisedDaemon {
+    Disable-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue | Out-Null
     $exitCode = Invoke-Multica -Arguments @('daemon', 'stop')
     if ($exitCode -ne 0) {
         throw "Multica daemon stop failed with exit code $exitCode"
@@ -171,9 +227,14 @@ switch ($Action) {
         $quotedScript = '"{0}"' -f $DeployedScript
         $taskAction = New-ScheduledTaskAction `
             -Execute $powerShellPath `
-            -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $quotedScript -Action RunForeground" `
+            -Argument "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $quotedScript -Action RunForeground" `
             -WorkingDirectory $env:SystemRoot
         $taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        $recoveryTrigger = New-ScheduledTaskTrigger `
+            -Once `
+            -At (Get-Date).AddMinutes($RecoveryIntervalMinutes) `
+            -RepetitionInterval (New-TimeSpan -Minutes $RecoveryIntervalMinutes) `
+            -RepetitionDuration (New-TimeSpan -Days 3650)
         $taskPrincipal = New-ScheduledTaskPrincipal `
             -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `
             -LogonType Interactive `
@@ -190,7 +251,7 @@ switch ($Action) {
         Register-ScheduledTask `
             -TaskName $TaskName `
             -Action $taskAction `
-            -Trigger $taskTrigger `
+            -Trigger @($taskTrigger, $recoveryTrigger) `
             -Principal $taskPrincipal `
             -Settings $taskSettings `
             -Description 'Supervises the native PC Multica Codex runtime used for PC service operations.' `
@@ -203,7 +264,11 @@ switch ($Action) {
 
         Write-Output "installed_task=$TaskName"
         Write-Output "runtime_root=$RuntimeRoot"
-        if (-not $NoStart) {
+        if ($NoStart) {
+            Disable-ScheduledTask -TaskName $TaskName | Out-Null
+            Write-Output 'supervision=disabled'
+        }
+        else {
             Start-SupervisedDaemon
         }
     }
@@ -222,7 +287,7 @@ switch ($Action) {
         Get-DaemonStatus
     }
     'RunForeground' {
-        Add-CodexCliToProcessPath | Out-Null
+        Add-RequiredCliToolsToProcessPath
         $exitCode = Invoke-Multica -DiscardOutput -Arguments @(
             'daemon', 'start',
             '--foreground',

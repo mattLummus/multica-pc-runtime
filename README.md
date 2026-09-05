@@ -29,11 +29,15 @@ That root is not a Git repository. Installation copies the reviewed supervisor
 into its `activation` directory so Windows startup does not depend on this
 checkout remaining at a particular path.
 
-At startup, the supervisor locates the current Codex Desktop CLI under
-`%LOCALAPPDATA%\OpenAI\Codex\bin` and adds its versioned directory to the
-daemon process environment. It does not change the persistent user or machine
-`PATH`, and it does not hard-code a Codex release directory that an application
-update can replace.
+At startup, the supervisor locates the current Codex Desktop CLI and a supported
+Git CLI, then adds their versioned directories to the daemon process
+environment. It does not change the persistent user or machine `PATH`, and it
+does not hard-code an application release directory that an update can replace.
+
+The scheduled task has both a sign-in trigger and a one-minute recovery
+trigger. The latter restores the daemon after termination modes that Windows
+does not classify as a restartable failure. An intentional `Stop` disables the
+task first, while `Start` re-enables supervision.
 
 ## Native runtime inventory
 

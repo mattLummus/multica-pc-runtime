@@ -4,9 +4,12 @@
 
 The current-user scheduled task `Multica-PC-Runtime` starts at Windows sign-in
 and runs the Multica daemon in the foreground. Task Scheduler can therefore
-observe it and retry an unexpected exit up to ten times at one-minute
-intervals. Windows ends the task during sign-out or shutdown; the next sign-in
-starts the same daemon identity and re-registers the existing provider
+observe it and retry an ordinary unexpected exit up to ten times at one-minute
+intervals. A separate one-minute repetition trigger recovers termination
+states, including `0xC000013A`, that Windows does not classify as restartable
+failures. Multiple-instance policy remains `IgnoreNew`, so a healthy daemon is
+not duplicated. Windows ends the task during sign-out or shutdown; the next
+sign-in starts the same daemon identity and re-registers the existing provider
 runtimes rather than creating new ones.
 
 The supervisor uses these existing authorities:
@@ -25,12 +28,13 @@ provider/client runtime.
 
 Before starting the daemon, the supervisor resolves `codex.exe` from the
 current process `PATH` or from Codex Desktop's versioned installation beneath
-`%LOCALAPPDATA%\OpenAI\Codex\bin`. The selected directory is prepended only to
-the scheduled process environment. This is required because Codex Desktop can
-make its CLI available to interactive child processes without adding that
-versioned directory to the persistent Windows `PATH` inherited by Task
-Scheduler. If no installed Codex CLI can be found, the task exits nonzero so
-its configured retry and failure reporting remain effective.
+`%LOCALAPPDATA%\OpenAI\Codex\bin`. It similarly resolves `git.exe` from the
+current process `PATH`, Git for Windows, or GitHub Desktop. The selected
+directories are prepended only to the scheduled process environment. This is
+required because desktop applications can make their CLIs available to
+interactive child processes without adding those versioned directories to the
+persistent Windows `PATH` inherited by Task Scheduler. A missing required CLI
+causes a nonzero exit so failure reporting and recovery remain effective.
 
 ## Install and operate
 
@@ -50,10 +54,11 @@ Run from a normal Windows PowerShell session:
 ```
 
 Use `-NoStart` with `Install` when reconciling task configuration during
-maintenance. Installation does not interrupt an already-running unsupervised
-daemon; supervision takes over at the next sign-in. Use `Restart` only after
-confirming that no Multica task is active because stopping the daemon interrupts
-active local work.
+maintenance; this leaves the scheduled task disabled so the recovery trigger
+cannot start it. `Start` re-enables the task. Installation does not interrupt an
+already-running unsupervised daemon; supervision takes over at the next sign-in.
+Use `Restart` only after confirming that no Multica task is active because
+stopping the daemon interrupts active local work.
 
 `Uninstall` removes only the scheduled task after stopping the daemon. It does
 not delete the runtime root, profile, credentials, task workspaces, or remote
