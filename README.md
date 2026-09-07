@@ -35,9 +35,12 @@ environment. It does not change the persistent user or machine `PATH`, and it
 does not hard-code an application release directory that an update can replace.
 
 The scheduled task has both a sign-in trigger and a one-minute recovery
-trigger. The latter restores the daemon after termination modes that Windows
-does not classify as a restartable failure. An intentional `Stop` disables the
-task first, while `Start` re-enables supervision.
+trigger. It launches through a windowless Windows Script Host wrapper, so
+dependency or server outages do not open recurring console windows. The
+long-running supervisor starts Multica only while Docker is ready, stops the
+daemon if Docker becomes unavailable, and retries silently when either Docker
+or the Multica server is temporarily unavailable. An intentional `Stop`
+disables the task first, while `Start` re-enables supervision.
 
 ## Native runtime inventory
 

@@ -8,9 +8,17 @@ observe it and retry an ordinary unexpected exit up to ten times at one-minute
 intervals. A separate one-minute repetition trigger recovers termination
 states, including `0xC000013A`, that Windows does not classify as restartable
 failures. Multiple-instance policy remains `IgnoreNew`, so a healthy daemon is
-not duplicated. Windows ends the task during sign-out or shutdown; the next
-sign-in starts the same daemon identity and re-registers the existing provider
-runtimes rather than creating new ones.
+not duplicated. The task uses a Windows Script Host launcher so retries remain
+windowless. Windows ends the task during sign-out or shutdown; the next sign-in
+starts the same daemon identity and re-registers the existing provider runtimes
+rather than creating new ones.
+
+The PowerShell supervisor remains alive while the task is enabled, but the
+Multica daemon is Docker-bound: it starts only after `docker info` succeeds and
+is stopped when Docker becomes unavailable. Docker and Multica-server outages
+are retried inside the windowless supervisor without spawning a visible console
+on every attempt. This keeps the PC operations runtime aligned with the local
+service execution surface.
 
 The supervisor uses these existing authorities:
 

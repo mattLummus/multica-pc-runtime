@@ -17,9 +17,13 @@ $RuntimeName = '[Local] PC Qwen service'
 $RuntimeRoot = 'C:\AgentRuntimes\pc-qwen-service'
 $CodexRuntimeId = '713a5202-c384-4cf0-8190-876e36f8bdcf'
 $RecoveryIntervalMinutes = 1
+$DockerPollSeconds = 15
+$DaemonRetrySeconds = 30
 $MulticaPath = Join-Path $RuntimeRoot 'bin\multica.exe'
 $ActivationRoot = Join-Path $RuntimeRoot 'activation'
 $DeployedScript = Join-Path $ActivationRoot 'Manage-MulticaPcRuntime.ps1'
+$LauncherName = 'Launch-MulticaPcRuntime.vbs'
+$DeployedLauncher = Join-Path $ActivationRoot $LauncherName
 
 function Assert-Installation {
     if (-not (Test-Path -LiteralPath $RuntimeRoot -PathType Container)) {
@@ -117,6 +121,67 @@ function Add-GitCliToProcessPath {
 function Add-RequiredCliToolsToProcessPath {
     Add-CodexCliToProcessPath | Out-Null
     Add-GitCliToProcessPath | Out-Null
+}
+
+function Test-DockerReady {
+    $docker = Get-Command docker.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $docker) {
+        return $false
+    }
+
+    try {
+        & $docker.Source info --format '{{.ServerVersion}}' *> $null
+        return $LASTEXITCODE -eq 0
+    }
+    catch {
+        return $false
+    }
+}
+
+function Start-DockerBoundDaemonSupervisor {
+    Assert-Installation
+    Add-RequiredCliToolsToProcessPath
+
+    $daemonArguments = @(
+        '--profile', $ProfileName,
+        'daemon', 'start',
+        '--foreground',
+        '--daemon-id', $DaemonId,
+        '--device-name', ('"{0}"' -f $DeviceName),
+        '--runtime-name', ('"{0}"' -f $RuntimeName),
+        '--workspaces-root', $RuntimeRoot,
+        '--no-auto-update'
+    ) -join ' '
+
+    while ($true) {
+        while (-not (Test-DockerReady)) {
+            Start-Sleep -Seconds $DockerPollSeconds
+        }
+
+        $daemonProcess = Start-Process `
+            -FilePath $MulticaPath `
+            -ArgumentList $daemonArguments `
+            -WorkingDirectory $env:SystemRoot `
+            -WindowStyle Hidden `
+            -PassThru
+
+        $dockerStopped = $false
+        while (-not $daemonProcess.WaitForExit($DockerPollSeconds * 1000)) {
+            if (-not (Test-DockerReady)) {
+                $dockerStopped = $true
+                Invoke-Multica -DiscardOutput -Arguments @('daemon', 'stop') | Out-Null
+                if (-not $daemonProcess.WaitForExit(30000)) {
+                    Stop-Process -Id $daemonProcess.Id -Force -ErrorAction SilentlyContinue
+                }
+                break
+            }
+        }
+
+        if (-not $dockerStopped) {
+            Start-Sleep -Seconds $DaemonRetrySeconds
+        }
+    }
 }
 
 function Invoke-Multica {
@@ -219,15 +284,23 @@ switch ($Action) {
         Assert-Installation
         New-Item -ItemType Directory -Path $ActivationRoot -Force | Out-Null
         $source = $MyInvocation.MyCommand.Path
+        $sourceRoot = Split-Path -Parent $source
+        $launcherSource = Join-Path $sourceRoot $LauncherName
+        if (-not (Test-Path -LiteralPath $launcherSource -PathType Leaf)) {
+            throw "Windowless launcher is missing beside the supervisor source: $launcherSource"
+        }
         if ([IO.Path]::GetFullPath($source) -ne [IO.Path]::GetFullPath($DeployedScript)) {
             Copy-Item -LiteralPath $source -Destination $DeployedScript -Force
         }
+        if ([IO.Path]::GetFullPath($launcherSource) -ne [IO.Path]::GetFullPath($DeployedLauncher)) {
+            Copy-Item -LiteralPath $launcherSource -Destination $DeployedLauncher -Force
+        }
 
-        $powerShellPath = (Get-Command powershell.exe).Source
-        $quotedScript = '"{0}"' -f $DeployedScript
+        $windowlessHost = Join-Path $env:SystemRoot 'System32\wscript.exe'
+        $quotedLauncher = '"{0}"' -f $DeployedLauncher
         $taskAction = New-ScheduledTaskAction `
-            -Execute $powerShellPath `
-            -Argument "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $quotedScript -Action RunForeground" `
+            -Execute $windowlessHost `
+            -Argument $quotedLauncher `
             -WorkingDirectory $env:SystemRoot
         $taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
         $recoveryTrigger = New-ScheduledTaskTrigger `
@@ -287,17 +360,7 @@ switch ($Action) {
         Get-DaemonStatus
     }
     'RunForeground' {
-        Add-RequiredCliToolsToProcessPath
-        $exitCode = Invoke-Multica -DiscardOutput -Arguments @(
-            'daemon', 'start',
-            '--foreground',
-            '--daemon-id', $DaemonId,
-            '--device-name', $DeviceName,
-            '--runtime-name', $RuntimeName,
-            '--workspaces-root', $RuntimeRoot,
-            '--no-auto-update'
-        )
-        exit $exitCode
+        Start-DockerBoundDaemonSupervisor
     }
     'Uninstall' {
         Stop-SupervisedDaemon
