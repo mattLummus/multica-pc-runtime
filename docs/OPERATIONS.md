@@ -17,8 +17,10 @@ The PowerShell supervisor remains alive while the task is enabled, but the
 Multica daemon is Docker-bound: it starts only after `docker info` succeeds and
 is stopped when Docker becomes unavailable. Docker and Multica-server outages
 are retried inside the windowless supervisor without spawning a visible console
-on every attempt. This keeps the PC operations runtime aligned with the local
-service execution surface.
+on every attempt. Docker discovery uses the current process `PATH` with Docker
+Desktop's stable installation path as a fallback, because a long-running Task
+Scheduler process can inherit a stale environment. This keeps the PC operations
+runtime aligned with the local service execution surface.
 
 The supervisor uses these existing authorities:
 

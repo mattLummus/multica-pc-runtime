@@ -127,7 +127,11 @@ function Test-DockerReady {
     $docker = Get-Command docker.exe -CommandType Application -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if (-not $docker) {
-        return $false
+        $dockerDesktopPath = Join-Path $env:ProgramFiles 'Docker\Docker\resources\bin\docker.exe'
+        if (-not (Test-Path -LiteralPath $dockerDesktopPath -PathType Leaf)) {
+            return $false
+        }
+        $docker = Get-Item -LiteralPath $dockerDesktopPath
     }
 
     try {
