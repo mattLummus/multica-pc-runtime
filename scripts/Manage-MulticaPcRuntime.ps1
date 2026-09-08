@@ -118,9 +118,57 @@ function Add-GitCliToProcessPath {
     return $resolved.Source
 }
 
+function Add-PythonCliToProcessPath {
+    $windowsAppsRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'
+    $existing = Get-Command python3.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Where-Object { -not $_.Source.StartsWith($windowsAppsRoot, [StringComparison]::OrdinalIgnoreCase) } |
+        Select-Object -First 1
+    if ($existing) {
+        return $existing.Source
+    }
+
+    $pythonRoot = Join-Path $env:LOCALAPPDATA 'Programs\Python'
+    $candidates = @(
+        Get-ChildItem -LiteralPath $pythonRoot -Directory -Filter 'Python*' -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $candidate = Join-Path $_.FullName 'python3.exe'
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                    Get-Item -LiteralPath $candidate
+                }
+            } |
+            Sort-Object LastWriteTimeUtc -Descending
+    )
+
+    if ($candidates.Count -eq 0) {
+        throw "No runnable Python 3 CLI was found under the supported per-user installation location: $pythonRoot"
+    }
+
+    $pythonPath = $candidates[0].FullName
+    $pythonDirectory = Split-Path -Parent $pythonPath
+    $pathEntries = @($env:PATH -split [IO.Path]::PathSeparator)
+    if ($pathEntries -notcontains $pythonDirectory) {
+        $env:PATH = $pythonDirectory + [IO.Path]::PathSeparator + $env:PATH
+    }
+
+    $resolved = Get-Command python3.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Where-Object { -not $_.Source.StartsWith($windowsAppsRoot, [StringComparison]::OrdinalIgnoreCase) } |
+        Select-Object -First 1
+    if (-not $resolved) {
+        throw 'Python 3 was found but could not be resolved ahead of the Windows Store application alias.'
+    }
+
+    & $resolved.Source --version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python 3 validation failed with exit code $LASTEXITCODE."
+    }
+
+    return $resolved.Source
+}
+
 function Add-RequiredCliToolsToProcessPath {
     Add-CodexCliToProcessPath | Out-Null
     Add-GitCliToProcessPath | Out-Null
+    Add-PythonCliToProcessPath | Out-Null
 }
 
 function Test-DockerReady {

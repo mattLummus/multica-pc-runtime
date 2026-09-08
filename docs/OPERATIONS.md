@@ -39,12 +39,15 @@ provider/client runtime.
 Before starting the daemon, the supervisor resolves `codex.exe` from the
 current process `PATH` or from Codex Desktop's versioned installation beneath
 `%LOCALAPPDATA%\OpenAI\Codex\bin`. It similarly resolves `git.exe` from the
-current process `PATH`, Git for Windows, or GitHub Desktop. The selected
-directories are prepended only to the scheduled process environment. This is
-required because desktop applications can make their CLIs available to
-interactive child processes without adding those versioned directories to the
-persistent Windows `PATH` inherited by Task Scheduler. A missing required CLI
-causes a nonzero exit so failure reporting and recovery remain effective.
+current process `PATH`, Git for Windows, or GitHub Desktop. It also resolves a
+runnable `python3.exe` from the current process `PATH` or a per-user Python
+installation beneath `%LOCALAPPDATA%\Programs\Python`; the Windows Store
+application-execution alias is explicitly rejected. The selected directories
+are prepended only to the scheduled process environment. This is required
+because desktop applications can make their CLIs available to interactive
+child processes without adding those versioned directories to the persistent
+Windows `PATH` inherited by Task Scheduler. A missing required CLI causes a
+nonzero exit so failure reporting and recovery remain effective.
 
 ## Install and operate
 

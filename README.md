@@ -29,10 +29,11 @@ That root is not a Git repository. Installation copies the reviewed supervisor
 into its `activation` directory so Windows startup does not depend on this
 checkout remaining at a particular path.
 
-At startup, the supervisor locates the current Codex Desktop CLI and a supported
-Git CLI, then adds their versioned directories to the daemon process
-environment. It does not change the persistent user or machine `PATH`, and it
-does not hard-code an application release directory that an update can replace.
+At startup, the supervisor locates the current Codex Desktop CLI, a supported
+Git CLI, and a runnable per-user `python3.exe`, then adds their versioned
+directories to the daemon process environment. It does not change the
+persistent user or machine `PATH`, and it does not hard-code an application
+release directory that an update can replace.
 
 The scheduled task has both a sign-in trigger and a one-minute recovery
 trigger. It launches through a windowless Windows Script Host wrapper, so
