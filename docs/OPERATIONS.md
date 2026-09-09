@@ -22,6 +22,12 @@ Desktop's stable installation path as a fallback, because a long-running Task
 Scheduler process can inherit a stale environment. This keeps the PC operations
 runtime aligned with the local service execution surface.
 
+The fallback invokes Docker Desktop by its resolved absolute executable path.
+This matters at sign-in: `docker.exe` may not yet be discoverable through the
+scheduled process's inherited `PATH` even though Docker Desktop becomes ready
+later. The supervisor continues polling that stable path and starts Multica
+once `docker info` succeeds.
+
 The supervisor uses these existing authorities:
 
 ```text
