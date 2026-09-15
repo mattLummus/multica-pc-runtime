@@ -43,6 +43,10 @@ daemon if Docker becomes unavailable, and retries silently when either Docker
 or the Multica server is temporarily unavailable. An intentional `Stop`
 disables the task first, while `Start` re-enables supervision.
 
+Docker readiness probes have a hard ten-second timeout. A Docker client or
+engine that stalls during startup is terminated as a probe failure, allowing
+the supervisor to continue polling and start Multica once Docker responds.
+
 ## Native runtime inventory
 
 | Provider | Runtime ID | Current role |

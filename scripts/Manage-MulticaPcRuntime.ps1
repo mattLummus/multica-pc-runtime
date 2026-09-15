@@ -18,6 +18,7 @@ $RuntimeRoot = 'C:\AgentRuntimes\pc-qwen-service'
 $CodexRuntimeId = '713a5202-c384-4cf0-8190-876e36f8bdcf'
 $RecoveryIntervalMinutes = 1
 $DockerPollSeconds = 15
+$DockerProbeTimeoutSeconds = 10
 $DaemonRetrySeconds = 30
 $MulticaPath = Join-Path $RuntimeRoot 'bin\multica.exe'
 $ActivationRoot = Join-Path $RuntimeRoot 'activation'
@@ -185,12 +186,44 @@ function Test-DockerReady {
         $dockerPath = $dockerDesktopPath
     }
 
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $dockerPath
+    $startInfo.Arguments = 'info --format "{{.ServerVersion}}"'
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    $started = $false
     try {
-        & $dockerPath info --format '{{.ServerVersion}}' *> $null
-        return $LASTEXITCODE -eq 0
+        if (-not $process.Start()) {
+            return $false
+        }
+        $started = $true
+
+        $outputDrain = $process.StandardOutput.ReadToEndAsync()
+        $errorDrain = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($DockerProbeTimeoutSeconds * 1000)) {
+            $process.Kill()
+            $process.WaitForExit()
+            return $false
+        }
+
+        $outputDrain.GetAwaiter().GetResult() | Out-Null
+        $errorDrain.GetAwaiter().GetResult() | Out-Null
+        return $process.ExitCode -eq 0
     }
     catch {
+        if ($started -and -not $process.HasExited) {
+            $process.Kill()
+            $process.WaitForExit()
+        }
         return $false
+    }
+    finally {
+        $process.Dispose()
     }
 }
 

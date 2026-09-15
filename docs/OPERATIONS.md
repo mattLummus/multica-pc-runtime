@@ -28,6 +28,12 @@ scheduled process's inherited `PATH` even though Docker Desktop becomes ready
 later. The supervisor continues polling that stable path and starts Multica
 once `docker info` succeeds.
 
+Each `docker info` readiness probe is executed without a visible window and has
+a hard ten-second deadline. If the Docker client or engine stalls, the
+supervisor terminates only that probe process, waits fifteen seconds, and tries
+again. This prevents a partially started Docker Desktop instance from leaving
+the supervisor alive while Multica remains permanently offline.
+
 The supervisor uses these existing authorities:
 
 ```text
