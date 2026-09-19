@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Install', 'Start', 'Stop', 'Restart', 'Status', 'RunForeground', 'Uninstall')]
+    [ValidateSet('Install', 'Start', 'Stop', 'Restart', 'Status', 'Reconcile', 'RunForeground', 'Uninstall')]
     [string]$Action = 'Status',
 
     [switch]$NoStart
@@ -20,11 +20,27 @@ $RecoveryIntervalMinutes = 1
 $DockerPollSeconds = 15
 $DockerProbeTimeoutSeconds = 10
 $DaemonRetrySeconds = 30
+$DaemonCommandTimeoutSeconds = 30
 $MulticaPath = Join-Path $RuntimeRoot 'bin\multica.exe'
 $ActivationRoot = Join-Path $RuntimeRoot 'activation'
 $DeployedScript = Join-Path $ActivationRoot 'Manage-MulticaPcRuntime.ps1'
 $LauncherName = 'Launch-MulticaPcRuntime.vbs'
 $DeployedLauncher = Join-Path $ActivationRoot $LauncherName
+$SupervisorLog = Join-Path $ActivationRoot 'supervisor.log'
+$SupervisorLogPrevious = Join-Path $ActivationRoot 'supervisor.previous.log'
+$SupervisorLogMaximumBytes = 1MB
+
+function Write-SupervisorLog {
+    param([Parameter(Mandatory)][string]$Message)
+
+    New-Item -ItemType Directory -Path $ActivationRoot -Force | Out-Null
+    if ((Test-Path -LiteralPath $SupervisorLog -PathType Leaf) -and
+        (Get-Item -LiteralPath $SupervisorLog).Length -ge $SupervisorLogMaximumBytes) {
+        Move-Item -LiteralPath $SupervisorLog -Destination $SupervisorLogPrevious -Force
+    }
+    $timestamp = [DateTime]::UtcNow.ToString('o')
+    Add-Content -LiteralPath $SupervisorLog -Value "$timestamp $Message" -Encoding UTF8
+}
 
 function Assert-Installation {
     if (-not (Test-Path -LiteralPath $RuntimeRoot -PathType Container)) {
@@ -272,6 +288,82 @@ function Start-DockerBoundDaemonSupervisor {
     }
 }
 
+function Invoke-MulticaProcessBounded {
+    param(
+        [Parameter(Mandatory)][string]$ArgumentString,
+        [int]$TimeoutSeconds = $DaemonCommandTimeoutSeconds
+    )
+
+    $process = Start-Process `
+        -FilePath $MulticaPath `
+        -ArgumentList $ArgumentString `
+        -WorkingDirectory $env:SystemRoot `
+        -WindowStyle Hidden `
+        -PassThru
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        $process.WaitForExit()
+        return [pscustomobject]@{ TimedOut = $true; ExitCode = $null }
+    }
+    return [pscustomobject]@{ TimedOut = $false; ExitCode = $process.ExitCode }
+}
+
+function Invoke-DockerBoundReconciliation {
+    Assert-Installation
+    Add-RequiredCliToolsToProcessPath
+
+    $daemonProcesses = @(Get-MulticaDaemonProcess)
+    if (-not (Test-DockerReady)) {
+        if ($daemonProcesses.Count -eq 0) {
+            Write-SupervisorLog 'docker=not_ready daemon=stopped action=none'
+            return
+        }
+
+        $result = Invoke-MulticaProcessBounded -ArgumentString "--profile $ProfileName daemon stop"
+        if ($result.TimedOut) {
+            foreach ($process in $daemonProcesses) {
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            }
+            Write-SupervisorLog 'docker=not_ready daemon=running action=stop result=timeout_forced'
+        }
+        else {
+            Write-SupervisorLog "docker=not_ready daemon=running action=stop result=exit_$($result.ExitCode)"
+        }
+        return
+    }
+
+    if ($daemonProcesses.Count -gt 0) {
+        Write-SupervisorLog 'docker=ready daemon=running action=none'
+        return
+    }
+
+    $arguments = @(
+        '--profile', $ProfileName,
+        'daemon', 'start',
+        '--daemon-id', $DaemonId,
+        '--device-name', ('"{0}"' -f $DeviceName),
+        '--runtime-name', ('"{0}"' -f $RuntimeName),
+        '--workspaces-root', ('"{0}"' -f $RuntimeRoot),
+        '--no-auto-update'
+    ) -join ' '
+    $result = Invoke-MulticaProcessBounded -ArgumentString $arguments
+    if ($result.TimedOut) {
+        Write-SupervisorLog 'docker=ready daemon=stopped action=start result=command_timeout'
+        throw "Multica daemon start exceeded the bounded $DaemonCommandTimeoutSeconds-second command timeout."
+    }
+    if ($result.ExitCode -ne 0) {
+        Write-SupervisorLog "docker=ready daemon=stopped action=start result=exit_$($result.ExitCode)"
+        throw "Multica daemon start failed with exit code $($result.ExitCode)."
+    }
+
+    Start-Sleep -Seconds 2
+    if (@(Get-MulticaDaemonProcess).Count -eq 0) {
+        Write-SupervisorLog 'docker=ready daemon=stopped action=start result=no_daemon_process'
+        throw 'Multica daemon start returned successfully but no daemon process remained.'
+    }
+    Write-SupervisorLog 'docker=ready daemon=stopped action=start result=running'
+}
+
 function Invoke-Multica {
     param(
         [Parameter(Mandatory)][string[]]$Arguments,
@@ -350,8 +442,8 @@ function Start-SupervisedDaemon {
         return
     }
     if (Get-MulticaDaemonProcess) {
-        Write-Output 'daemon=already_running_unsupervised'
-        Write-Output 'supervision=will_take_over_at_next_sign_in'
+        Write-Output 'daemon=already_running'
+        Write-Output 'supervision=next_scheduled_reconciliation'
         return
     }
     Start-ScheduledTask -TaskName $TaskName
@@ -446,6 +538,9 @@ switch ($Action) {
     }
     'Status' {
         Get-DaemonStatus
+    }
+    'Reconcile' {
+        Invoke-DockerBoundReconciliation
     }
     'RunForeground' {
         Start-DockerBoundDaemonSupervisor

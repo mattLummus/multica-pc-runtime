@@ -3,36 +3,41 @@
 ## Windows lifecycle
 
 The current-user scheduled task `Multica-PC-Runtime` starts at Windows sign-in
-and runs the Multica daemon in the foreground. Task Scheduler can therefore
-observe it and retry an ordinary unexpected exit up to ten times at one-minute
-intervals. A separate one-minute repetition trigger recovers termination
-states, including `0xC000013A`, that Windows does not classify as restartable
-failures. Multiple-instance policy remains `IgnoreNew`, so a healthy daemon is
-not duplicated. The task uses a Windows Script Host launcher so retries remain
-windowless. Windows ends the task during sign-out or shutdown; the next sign-in
-starts the same daemon identity and re-registers the existing provider runtimes
-rather than creating new ones.
+and repeats once per minute. Each invocation is a short-lived reconciliation:
+it checks Docker, starts the existing Multica daemon identity when needed, or
+stops it when Docker is unavailable, then exits. Multiple-instance policy is
+`IgnoreNew`, so a still-running reconciliation is not duplicated. The task
+uses a Windows Script Host launcher so each invocation remains windowless.
+The next sign-in starts the same daemon identity and re-registers the existing
+provider runtimes rather than creating new ones.
 
-The PowerShell supervisor remains alive while the task is enabled, but the
-Multica daemon is Docker-bound: it starts only after `docker info` succeeds and
-is stopped when Docker becomes unavailable. Docker and Multica-server outages
-are retried inside the windowless supervisor without spawning a visible console
-on every attempt. Docker discovery uses the current process `PATH` with Docker
-Desktop's stable installation path as a fallback, because a long-running Task
-Scheduler process can inherit a stale environment. This keeps the PC operations
-runtime aligned with the local service execution surface.
+The Multica daemon is Docker-bound: it starts only after `docker info` succeeds
+and is stopped when Docker becomes unavailable. Docker and Multica-server
+outages are retried by later scheduled reconciliations without spawning a
+visible console. Docker discovery uses the current process `PATH` with Docker
+Desktop's stable installation path as a fallback. Each reconciliation also
+gets a fresh process environment, avoiding stale CLI paths after Codex Desktop
+or Docker Desktop updates.
 
 The fallback invokes Docker Desktop by its resolved absolute executable path.
 This matters at sign-in: `docker.exe` may not yet be discoverable through the
 scheduled process's inherited `PATH` even though Docker Desktop becomes ready
-later. The supervisor continues polling that stable path and starts Multica
-once `docker info` succeeds.
+later. The next scheduled reconciliation starts Multica once `docker info`
+succeeds.
 
 Each `docker info` readiness probe is executed without a visible window and has
 a hard ten-second deadline. If the Docker client or engine stalls, the
-supervisor terminates only that probe process, waits fifteen seconds, and tries
-again. This prevents a partially started Docker Desktop instance from leaving
-the supervisor alive while Multica remains permanently offline.
+reconciler terminates only that probe process and exits. The next one-minute
+trigger tries again. Multica start and stop commands have a separate hard
+30-second deadline. This prevents a stuck wrapper from suppressing every later
+recovery trigger while Multica remains offline.
+
+Sanitized reconciliation outcomes are retained in bounded rotating logs:
+
+```text
+C:\AgentRuntimes\pc-qwen-service\activation\supervisor.log
+C:\AgentRuntimes\pc-qwen-service\activation\supervisor.previous.log
+```
 
 The supervisor uses these existing authorities:
 
@@ -81,7 +86,7 @@ Run from a normal Windows PowerShell session:
 Use `-NoStart` with `Install` when reconciling task configuration during
 maintenance; this leaves the scheduled task disabled so the recovery trigger
 cannot start it. `Start` re-enables the task. Installation does not interrupt an
-already-running unsupervised daemon; supervision takes over at the next sign-in.
+already-running unsupervised daemon; a later reconciliation observes it.
 Use `Restart` only after confirming that no Multica task is active because
 stopping the daemon interrupts active local work.
 

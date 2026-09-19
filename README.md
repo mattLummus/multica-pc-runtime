@@ -35,17 +35,21 @@ directories to the daemon process environment. It does not change the
 persistent user or machine `PATH`, and it does not hard-code an application
 release directory that an update can replace.
 
-The scheduled task has both a sign-in trigger and a one-minute recovery
-trigger. It launches through a windowless Windows Script Host wrapper, so
-dependency or server outages do not open recurring console windows. The
-long-running supervisor starts Multica only while Docker is ready, stops the
-daemon if Docker becomes unavailable, and retries silently when either Docker
-or the Multica server is temporarily unavailable. An intentional `Stop`
-disables the task first, while `Start` re-enables supervision.
+The scheduled task has both a sign-in trigger and a one-minute reconciliation
+trigger. It launches a short-lived reconciliation through a windowless Windows
+Script Host wrapper, so dependency or server outages do not open recurring
+console windows. Each fresh invocation independently starts Multica when
+Docker is ready, stops it when Docker is unavailable, and then exits. This
+avoids treating a surviving wrapper process as proof that the daemon is alive.
+An intentional `Stop` disables the task first, while `Start` re-enables
+reconciliation.
 
 Docker readiness probes have a hard ten-second timeout. A Docker client or
 engine that stalls during startup is terminated as a probe failure, allowing
-the supervisor to continue polling and start Multica once Docker responds.
+the next reconciliation to start Multica once Docker responds. Multica
+start/stop commands have a separate 30-second timeout. Reconciliation outcomes
+are recorded without credentials in the bounded, rotating
+`activation\supervisor.log`.
 
 The currently validated native Multica CLI is `0.5.0`. The CLI binary remains
 outside Git at `C:\AgentRuntimes\pc-qwen-service\bin\multica.exe`; update it
