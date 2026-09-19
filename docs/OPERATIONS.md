@@ -85,6 +85,33 @@ already-running unsupervised daemon; supervision takes over at the next sign-in.
 Use `Restart` only after confirming that no Multica task is active because
 stopping the daemon interrupts active local work.
 
+### Daemon starts but the runtime remains offline
+
+The scheduled supervisor and the Multica daemon are separate health layers. A
+running `Multica-PC-Runtime` task proves only that supervision is active. Check
+the native daemon and workspace registration separately:
+
+```powershell
+C:\AgentRuntimes\pc-qwen-service\bin\multica.exe --profile pc-qwen-service daemon status
+C:\AgentRuntimes\pc-qwen-service\bin\multica.exe --profile pc-qwen-service runtime list
+```
+
+Daemon diagnostics are retained outside Git under the profile directory:
+
+```text
+%USERPROFILE%\.multica\profiles\pc-qwen-service\daemon.log
+%USERPROFILE%\.multica\profiles\pc-qwen-service\daemon.err.log
+```
+
+The validated CLI version is `0.5.0`. Version `0.4.36` was observed starting,
+authenticating, and opening `127.0.0.1:20012`, then exiting after authenticated
+token-renewal and `/api/daemon/workspaces` timeouts. The supervisor correctly
+retried it, but retries could not make that incompatible daemon path healthy.
+If this exact signature recurs, first confirm Docker and the self-hosted server
+are reachable, stop the scheduled supervisor, use the CLI's supported `update`
+command, and restart the existing scheduled task. Preserve the profile, daemon
+ID, workspace root, and credentials; do not create a replacement runtime.
+
 `Uninstall` removes only the scheduled task after stopping the daemon. It does
 not delete the runtime root, profile, credentials, task workspaces, or remote
 runtime records.

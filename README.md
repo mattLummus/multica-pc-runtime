@@ -47,6 +47,13 @@ Docker readiness probes have a hard ten-second timeout. A Docker client or
 engine that stalls during startup is terminated as a probe failure, allowing
 the supervisor to continue polling and start Multica once Docker responds.
 
+The currently validated native Multica CLI is `0.5.0`. The CLI binary remains
+outside Git at `C:\AgentRuntimes\pc-qwen-service\bin\multica.exe`; update it
+with Multica's supported `update` command while the scheduled supervisor is
+stopped. Version `0.4.36` could authenticate and open its local health listener
+but repeatedly timed out on the authenticated daemon workspace-discovery path,
+causing the supervisor to restart it without ever bringing the runtime online.
+
 ## Native runtime inventory
 
 | Provider | Runtime ID | Current role |
